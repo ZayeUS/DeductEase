@@ -9,16 +9,17 @@ import {
   Alert,
   CircularProgress,
   useTheme,
-  Checkbox,
-  FormControlLabel,
-  Paper
+  Paper,
+  Divider,
+  InputAdornment,
+  IconButton
 } from "@mui/material";
+import { Visibility, VisibilityOff } from "@mui/icons-material";
+import { useNavigate } from "react-router-dom";
 import { login as firebaseLogin, resetPassword } from "../../../firebase";
 import { useUserStore } from "../../store/userStore";
-import { useNavigate } from "react-router-dom";
 
 export function LoginPage() {
-  // State - simplified and focused
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
@@ -26,40 +27,39 @@ export function LoginPage() {
   const [error, setError] = useState("");
   const [resetMode, setResetMode] = useState(false);
   const [resetSuccess, setResetSuccess] = useState(false);
-  
+  const [showPassword, setShowPassword] = useState(false); // Define showPassword state
+
   const theme = useTheme();
   const navigate = useNavigate();
-  
-  // Simplified validation
-  const validateEmail = (email) => {
-    return email && /\S+@\S+\.\S+/.test(email);
-  };
-  
-  // Clear form submission
+
+  // Email validation
+  const validateEmail = (email) => /\S+@\S+\.\S+/.test(email);
+
+  // Handle login
   const handleLogin = async (e) => {
     e.preventDefault();
     setError("");
-    
+
     if (!email || !password) {
       setError("Please fill in all fields");
       return;
     }
-    
+
     if (!validateEmail(email)) {
       setError("Please enter a valid email address");
       return;
     }
-    
+
     setIsSubmitting(true);
     try {
       await firebaseLogin(email, password);
       if (rememberMe) {
         localStorage.setItem("rememberedEmail", email);
       }
-      // Navigation happens automatically via auth state
-    } catch (error) {
-      // Provide helpful error messages
-      switch (error.code) {
+      // Navigate to the dashboard
+      navigate("/dashboard");
+    } catch (err) {
+      switch (err.code) {
         case "auth/user-not-found":
           setError("No account found with this email");
           break;
@@ -76,37 +76,36 @@ export function LoginPage() {
       setIsSubmitting(false);
     }
   };
-  
-  // Password reset handler
+
+  // Handle password reset
   const handlePasswordReset = async (e) => {
     e.preventDefault();
     setError("");
-    
+
     if (!validateEmail(email)) {
       setError("Please enter a valid email address");
       return;
     }
-    
+
     setIsSubmitting(true);
     try {
       await resetPassword(email);
       setResetSuccess(true);
-    } catch (error) {
+    } catch (err) {
       setError("Failed to send reset email. Please check your email address");
     } finally {
       setIsSubmitting(false);
     }
   };
-  
+
   // Load remembered email on mount
   React.useEffect(() => {
     const remembered = localStorage.getItem("rememberedEmail");
     if (remembered) {
       setEmail(remembered);
-      setRememberMe(true);
     }
   }, []);
-  
+
   return (
     <Box
       sx={{
@@ -117,7 +116,6 @@ export function LoginPage() {
         position: "relative",
         overflow: "hidden",
         bgcolor: theme.palette.background.default,
-        // Subtle gradient background
         "&::before": {
           content: '""',
           position: "absolute",
@@ -125,25 +123,14 @@ export function LoginPage() {
           left: 0,
           right: 0,
           bottom: 0,
-          background: theme.palette.mode === 'dark' 
-            ? `radial-gradient(circle at 30% 20%, ${theme.palette.primary.dark}15 0%, transparent 50%),
-               radial-gradient(circle at 70% 80%, ${theme.palette.secondary.dark}10 0%, transparent 50%)`
-            : `radial-gradient(circle at 30% 20%, ${theme.palette.primary.light}15 0%, transparent 50%),
-               radial-gradient(circle at 70% 80%, ${theme.palette.secondary.light}10 0%, transparent 50%)`,
+          background:
+            theme.palette.mode === "dark"
+              ? `radial-gradient(circle at 30% 20%, ${theme.palette.primary.dark}15 0%, transparent 50%),
+                 radial-gradient(circle at 70% 80%, ${theme.palette.secondary.dark}10 0%, transparent 50%)`
+              : `radial-gradient(circle at 30% 20%, ${theme.palette.primary.light}15 0%, transparent 50%),
+                 radial-gradient(circle at 70% 80%, ${theme.palette.secondary.light}10 0%, transparent 50%)`,
           zIndex: 0,
         },
-        // Subtle pattern overlay
-        "&::after": {
-          content: '""',
-          position: "absolute",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23${theme.palette.mode === 'dark' ? '444' : 'ddd'}' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
-          opacity: theme.palette.mode === 'dark' ? 0.02 : 0.05,
-          zIndex: 0,
-        }
       }}
     >
       <Container maxWidth="sm" sx={{ position: "relative", zIndex: 1 }}>
@@ -152,43 +139,40 @@ export function LoginPage() {
           sx={{
             p: { xs: 3, sm: 5 },
             borderRadius: 3,
-            backgroundColor: theme.palette.mode === 'dark' 
-              ? 'rgba(255, 255, 255, 0.05)'
-              : 'rgba(255, 255, 255, 0.9)',
-            backdropFilter: 'blur(10px)',
+            backgroundColor:
+              theme.palette.mode === "dark"
+                ? "rgba(255, 255, 255, 0.05)"
+                : "rgba(255, 255, 255, 0.9)",
+            backdropFilter: "blur(10px)",
             border: `1px solid ${theme.palette.divider}`,
           }}
         >
           {/* Logo/Brand */}
           <Box sx={{ textAlign: "center", mb: 4 }}>
             <Typography variant="h3" fontWeight="bold" gutterBottom>
-              Cofoundless
+            DuductEase
             </Typography>
             <Typography variant="body1" color="text.secondary">
               {resetMode ? "Reset your password" : "Sign in to your account"}
             </Typography>
           </Box>
-          
+
           {/* Main Form */}
-          <Box
-            component="form"
-            onSubmit={resetMode ? handlePasswordReset : handleLogin}
-            noValidate
-          >
-            {/* Error Alert - Single source of truth */}
+          <Box component="form" onSubmit={resetMode ? handlePasswordReset : handleLogin} noValidate>
+            {/* Error Alert */}
             {error && (
               <Alert severity="error" sx={{ mb: 3 }}>
                 {error}
               </Alert>
             )}
-            
+
             {/* Success Message for Password Reset */}
             {resetSuccess && (
               <Alert severity="success" sx={{ mb: 3 }}>
                 Password reset email sent! Check your inbox.
               </Alert>
             )}
-            
+
             {/* Email Field */}
             <TextField
               label="Email"
@@ -201,21 +185,14 @@ export function LoginPage() {
               autoComplete="email"
               autoFocus
               disabled={isSubmitting}
-              sx={{
-                '& .MuiOutlinedInput-root': {
-                  backgroundColor: theme.palette.mode === 'dark' 
-                    ? 'rgba(255, 255, 255, 0.05)'
-                    : 'rgba(255, 255, 255, 0.7)',
-                }
-              }}
             />
-            
-            {/* Password Field - Only show in login mode */}
+
+            {/* Password Field (Only in login mode) */}
             {!resetMode && (
               <>
                 <TextField
                   label="Password"
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   fullWidth
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -223,25 +200,23 @@ export function LoginPage() {
                   required
                   autoComplete="current-password"
                   disabled={isSubmitting}
-                  sx={{
-                    '& .MuiOutlinedInput-root': {
-                      backgroundColor: theme.palette.mode === 'dark' 
-                        ? 'rgba(255, 255, 255, 0.05)'
-                        : 'rgba(255, 255, 255, 0.7)',
-                    }
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton
+                          aria-label="toggle password visibility"
+                          onClick={() => setShowPassword((prev) => !prev)}
+                          onMouseDown={(e) => e.preventDefault()}
+                          edge="end"
+                        >
+                          {showPassword ? <VisibilityOff /> : <Visibility />}
+                        </IconButton>
+                      </InputAdornment>
+                    ),
                   }}
                 />
-                
-                {/* Remember Me & Forgot Password - Same Line */}
-                <Box sx={{ 
-                  display: "flex", 
-                  justifyContent: "space-between", 
-                  alignItems: "center",
-                  mt: 1,
-                  mb: 3
-                }}>
-                  
-                  
+                {/* Remember Me & Forgot Password Links */}
+                <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mt: 1, mb: 3 }}>
                   <Link
                     component="button"
                     variant="body2"
@@ -258,7 +233,7 @@ export function LoginPage() {
                 </Box>
               </>
             )}
-            
+
             {/* Submit Button */}
             <Button
               type="submit"
@@ -266,11 +241,7 @@ export function LoginPage() {
               variant="contained"
               size="large"
               disabled={isSubmitting}
-              sx={{ 
-                py: 1.5,
-                mt: resetMode ? 3 : 0,
-                position: "relative"
-              }}
+              sx={{ py: 1.5, mt: resetMode ? 3 : 0, position: "relative" }}
             >
               {isSubmitting && (
                 <CircularProgress
@@ -284,7 +255,7 @@ export function LoginPage() {
               )}
               {resetMode ? "Send Reset Email" : "Sign In"}
             </Button>
-            
+
             {/* Secondary Actions */}
             <Box sx={{ mt: 3, textAlign: "center" }}>
               {resetMode ? (
@@ -318,13 +289,6 @@ export function LoginPage() {
                 </Typography>
               )}
             </Box>
-          </Box>
-          
-          {/* Footer - Optional */}
-          <Box sx={{ mt: 5, textAlign: "center" }}>
-            <Typography variant="caption" color="text.secondary">
-              © 2024 Cofoundless. All rights reserved.
-            </Typography>
           </Box>
         </Paper>
       </Container>

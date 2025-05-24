@@ -1,400 +1,408 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import {
-  Box, Typography, TextField, Button, Alert, Paper,
-  useTheme, useMediaQuery, Snackbar, Avatar, LinearProgress, Fade
+  Box,
+  Typography,
+  TextField,
+  Button,
+  Alert,
+  Paper,
+  useTheme,
+  Container,
+  CircularProgress,
+  MenuItem,
+  FormControlLabel,
+  Checkbox,
+  FormHelperText,
+  FormGroup,
 } from "@mui/material";
-import { CloudUpload, Person, CalendarMonth } from "@mui/icons-material";
+import { ArrowForward as ArrowIcon, Gavel as LegalIcon } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
-import { postData, uploadFile } from "../../utils/BackendRequestHelper";
+import { postData } from "../../utils/BackendRequestHelper";
 import { useUserStore } from "../../store/userStore";
 
+const BUSINESS_TYPES = [
+  { value: "LLC", label: "LLC" },
+  { value: "S_CORP", label: "S-Corp" },
+  { value: "SOLE_PROP", label: "Sole Proprietorship" },
+];
+const AGENCY_TYPES = [
+  { value: "DIGITAL", label: "Digital Agency" },
+  { value: "CREATIVE", label: "Creative Agency" },
+  { value: "MARKETING", label: "Marketing Agency" },
+  { value: "DEV", label: "Development Agency" },
+  { value: "CONSULTING", label: "Consulting" },
+  { value: "OTHER", label: "Other" },
+];
+
+const LEGAL_DISCLAIMERS = [
+  {
+    name: "disclaimer_tax_advice",
+    label:
+      "I understand that DuductEase provides estimates and does not offer official tax advice or prepare my tax returns.",
+  },
+  {
+    name: "disclaimer_data_use",
+    label:
+      "I consent to DuductEase securely accessing and using my financial data to provide tax tracking services.",
+  },
+  {
+    name: "disclaimer_no_liability",
+    label:
+      "I acknowledge that DuductEase is not responsible for any financial losses resulting from use of the service.",
+  },
+  // {
+  //   name: "disclaimer_terms",
+  //   label: (
+  //     <>
+  //       I agree to the{" "}
+  //       <a href="/terms" target="_blank" rel="noopener noreferrer">
+  //         Terms of Service
+  //       </a>{" "}
+  //       and{" "}
+  //       <a href="/privacy" target="_blank" rel="noopener noreferrer">
+  //         Privacy Policy
+  //       </a>
+  //       .
+  //     </>
+  //   ),
+  // },
+];
+
+const calculateAge = (dateString) => {
+  const dob = new Date(dateString);
+  const today = new Date();
+  let age = today.getFullYear() - dob.getFullYear();
+  const monthDiff = today.getMonth() - dob.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) age--;
+  return age;
+};
+
 export const ProfileOnboarding = () => {
-  // State
-  const [form, setForm] = useState({ 
-    first_name: "", last_name: "", date_of_birth: "", is_new_user: true 
+  const [form, setForm] = useState({
+    first_name: "",
+    last_name: "",
+    date_of_birth: "",
+    business_type: "",
+    agency_type: "",
   });
+  const [disclaimers, setDisclaimers] = useState(
+    LEGAL_DISCLAIMERS.reduce((acc, item) => ({ ...acc, [item.name]: false }), {})
+  );
   const [errors, setErrors] = useState({});
   const [apiError, setApiError] = useState("");
-  const [notification, setNotification] = useState({ open: false, message: "", severity: "success" });
-  const [avatarFile, setAvatarFile] = useState(null);
-  const [avatarPreview, setAvatarPreview] = useState(null);
+  const [loading, setLoading] = useState(false);
 
-  // Hooks
+  const firstInvalidRef = useRef(null);
+
   const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const navigate = useNavigate();
-  const { setProfile, clearUser, loading, setLoading } = useUserStore();
+  const { setProfile, clearUser } = useUserStore();
 
-  // Handlers
   const handleChange = (e) => {
-    const { name, value } = e.target;
-    setForm(prev => ({ ...prev, [name]: value }));
-    if (errors[name]) setErrors(prev => ({ ...prev, [name]: null }));
+    const { name, value, type, checked } = e.target;
+    if (name.startsWith("disclaimer_")) {
+      setDisclaimers((prev) => ({ ...prev, [name]: checked }));
+      if (errors[name]) setErrors((prev) => ({ ...prev, [name]: null }));
+    } else {
+      setForm((prev) => ({
+        ...prev,
+        [name]: type === "checkbox" ? checked : value,
+      }));
+      if (errors[name]) setErrors((prev) => ({ ...prev, [name]: null }));
+    }
     if (apiError) setApiError("");
   };
 
-  const handleAvatarChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      // Validate file type
-      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png'];
-      if (!allowedTypes.includes(file.type)) {
-        setNotification({ 
-          open: true, 
-          message: "Only JPEG and PNG images are allowed", 
-          severity: "error" 
-        });
-        e.target.value = null;
-        return;
-      }
-
-      // Validate file size (5MB limit)
-      const maxSize = 5 * 1024 * 1024;
-      if (file.size > maxSize) {
-        setNotification({ 
-          open: true, 
-          message: "Image size should be less than 5MB", 
-          severity: "error" 
-        });
-        e.target.value = null;
-        return;
-      }
-
-      setAvatarFile(file);
-      setAvatarPreview(URL.createObjectURL(file));
-    }
-  };
-
-  // Validation
   const validate = () => {
     const errs = {};
-    const { first_name, last_name, date_of_birth } = form;
-
-    if (!first_name.trim()) errs.first_name = "First name is required";
-    if (!last_name.trim()) errs.last_name = "Last name is required";
-
-    if (date_of_birth) {
-      const dob = new Date(date_of_birth);
-      const today = new Date();
-      
-      if (isNaN(dob.getTime())) errs.date_of_birth = "Invalid date";
-      else if (dob > today) errs.date_of_birth = "Cannot be in the future";
-      else {
-        const age = today.getFullYear() - dob.getFullYear();
-        if (age < 13) errs.date_of_birth = "Must be at least 13 years old";
-        if (age > 120) errs.date_of_birth = "Please enter a valid date";
-      }
+    if (!form.first_name.trim()) errs.first_name = "Required";
+    if (!form.last_name.trim()) errs.last_name = "Required";
+    if (!form.business_type) errs.business_type = "Required";
+    if (!form.agency_type) errs.agency_type = "Required";
+    if (!form.date_of_birth) {
+      errs.date_of_birth = "Required";
     } else {
-      errs.date_of_birth = "Date of birth is required";
+      const age = calculateAge(form.date_of_birth);
+      if (age < 18) errs.date_of_birth = "Must be 18 or older";
+      else if (age > 120) errs.date_of_birth = "Invalid date";
     }
+    LEGAL_DISCLAIMERS.forEach(({ name }) => {
+      if (!disclaimers[name]) {
+        errs[name] = "Required";
+      }
+    });
 
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
 
-  // Submit
+  const focusFirstError = () => {
+    if (!firstInvalidRef.current) return;
+    firstInvalidRef.current.focus();
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!validate()) return;
-
+    if (!validate()) {
+      focusFirstError();
+      return;
+    }
     setLoading(true);
     try {
-      // Create profile
-      const profileRes = await postData("/profile", form);
-      
+      const profileRes = await postData("/profile", {
+        ...form,
+        is_new_user: true,
+        accepted_terms: true,
+        accepted_disclaimers: Object.keys(disclaimers).filter(
+          (key) => disclaimers[key]
+        ),
+        terms_accepted_at: new Date().toISOString(),
+      });
       if (profileRes?.profile) {
         setProfile(profileRes.profile);
-
-        // Upload avatar if exists
-        if (avatarFile) {
-          const formData = new FormData();
-          formData.append("avatar", avatarFile);
-          
-          try {
-            const avatarResponse = await uploadFile("/profile/avatar", formData);
-            
-            if (avatarResponse?.profile?.avatar_url) {
-              profileRes.profile.avatar_url = avatarResponse.profile.avatar_url;
-              setProfile(profileRes.profile);
-            }
-          } catch (uploadError) {
-            setNotification({ 
-              open: true, 
-              message: "Profile saved but avatar upload failed", 
-              severity: "warning" 
-            });
-          }
-        }
-
-        setNotification({ open: true, message: "Welcome to Cofoundless!", severity: "success" });
-        setTimeout(() => navigate("/dashboard"), 1200);
+        navigate("/connect");
       } else {
-        setApiError("Unable to save profile");
+        setApiError("Unable to save profile. Please try again.");
       }
     } catch (err) {
-      console.error(err);
-      setApiError(err.message || "Something went wrong");
+      setApiError(err.message || "Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
-  // Calculate progress
-  const progress = () => {
-    let completed = 0;
-    if (avatarFile) completed += 25;
-    if (form.first_name) completed += 25;
-    if (form.last_name) completed += 25;
-    if (form.date_of_birth) completed += 25;
-    return completed;
+  const handleLogout = () => {
+    clearUser();
+    navigate("/login");
   };
 
-  return (
-    <Box 
-      sx={{ 
-        minHeight: "100vh", 
-        display: "flex", 
-        flexDirection: "column",
-        bgcolor: theme.palette.background.default,
-        position: "relative",
-        overflow: "hidden",
-        // Subtle animated background
-        "&::before": {
-          content: '""',
-          position: "absolute",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: theme.palette.mode === 'dark'
-            ? `radial-gradient(circle at 20% 80%, ${theme.palette.primary.dark}20 0%, transparent 50%),
-               radial-gradient(circle at 80% 20%, ${theme.palette.secondary.dark}15 0%, transparent 50%)`
-            : `radial-gradient(circle at 20% 80%, ${theme.palette.primary.light}20 0%, transparent 50%),
-               radial-gradient(circle at 80% 20%, ${theme.palette.secondary.light}15 0%, transparent 50%)`,
-          animation: "drift 20s ease-in-out infinite",
-          zIndex: 0,
-        },
-        "@keyframes drift": {
-          "0%, 100%": { transform: "translate(0, 0)" },
-          "50%": { transform: "translate(-20px, -20px)" },
+  // Utility to assign ref to first invalid field
+  const getFieldRef = (fieldName) =>
+    errors[fieldName] && !firstInvalidRef.current
+      ? (el) => {
+          if (el) firstInvalidRef.current = el;
         }
+      : null;
+
+  return (
+    <Box
+      sx={{
+        minHeight: "100vh",
+        bgcolor: theme.palette.background.default,
+        display: "flex",
+        alignItems: "center",
+        py: 4,
       }}
     >
-      {/* Notification */}
-      <Snackbar
-        open={notification.open}
-        autoHideDuration={4000}
-        onClose={() => setNotification(prev => ({ ...prev, open: false }))}
-        anchorOrigin={{ vertical: "top", horizontal: "center" }}
-      >
-        <Alert severity={notification.severity}>{notification.message}</Alert>
-      </Snackbar>
+      <Container maxWidth="sm">
+        <Paper
+          elevation={0}
+          sx={{
+            p: { xs: 3, sm: 4 },
+            borderRadius: 2,
+            border: `1px solid ${theme.palette.divider}`,
+            bgcolor: theme.palette.background.paper,
+          }}
+        >
+          <Box sx={{ mb: 4, textAlign: "center" }}>
+            <Typography
+              variant="overline"
+              color="text.secondary"
+              sx={{ letterSpacing: 1, mb: 1 }}
+            >
+              GET STARTED
+            </Typography>
+            <Typography variant="h4" fontWeight={700} sx={{ mb: 1 }}>
+              Welcome to DuductEase
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Quick setup. Get personalized, audit-ready tax tracking for your
+              agency.
+            </Typography>
+          </Box>
 
-      {/* Progress Bar */}
-      <LinearProgress 
-        variant="determinate" 
-        value={progress()} 
-        sx={{ 
-          position: "fixed", 
-          top: 0, 
-          left: 0, 
-          right: 0, 
-          height: 3,
-          zIndex: 1200,
-          bgcolor: 'transparent',
-          '& .MuiLinearProgress-bar': {
-            background: `linear-gradient(90deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
-          }
-        }} 
-      />
+          {apiError && (
+            <Alert severity="error" sx={{ mb: 3 }} onClose={() => setApiError("")}>
+              {apiError}
+            </Alert>
+          )}
 
-      {/* Header */}
-      <Box sx={{ p: { xs: 2, sm: 3 }, zIndex: 1 }}>
-        <Box sx={{ 
-          width: "100%", 
-          maxWidth: 1000, 
-          mx: "auto",
-          display: "flex", 
-          justifyContent: "space-between", 
-          alignItems: "center" 
-        }}>
-          <Fade in timeout={800}>
-            <Box>
-              <Typography 
-                variant="h4" 
-                fontWeight="bold"
-                sx={{
-                  background: `linear-gradient(45deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
-                  backgroundClip: "text",
-                  textFillColor: "transparent",
-                  WebkitBackgroundClip: "text",
-                  WebkitTextFillColor: "transparent",
-                }}
-              >
-                Welcome to Cofoundless
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                Complete your profile to get started
-              </Typography>
+          <form onSubmit={handleSubmit} noValidate>
+            {/* Name Fields */}
+            <Box
+              sx={{
+                display: "grid",
+                gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+                gap: 2,
+                mb: 3,
+              }}
+            >
+              <TextField
+                inputRef={getFieldRef("first_name")}
+                name="first_name"
+                label="First Name"
+                value={form.first_name}
+                onChange={handleChange}
+                error={!!errors.first_name}
+                helperText={errors.first_name}
+                disabled={loading}
+                fullWidth
+                required
+                autoComplete="given-name"
+              />
+              <TextField
+                inputRef={getFieldRef("last_name")}
+                name="last_name"
+                label="Last Name"
+                value={form.last_name}
+                onChange={handleChange}
+                error={!!errors.last_name}
+                helperText={errors.last_name}
+                disabled={loading}
+                fullWidth
+                required
+                autoComplete="family-name"
+              />
             </Box>
-          </Fade>
-          <Button 
-            variant="text" 
-            color="error" 
-            onClick={() => {clearUser(); navigate("/login");}}
-            sx={{ minWidth: 'auto' }}
-          >
-            Logout
-          </Button>
-        </Box>
-      </Box>
 
-      {/* Main Content */}
-      <Box sx={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", p: { xs: 2, sm: 3 }, zIndex: 1 }}>
-        <Fade in timeout={1000}>
-          <Paper 
-            elevation={0}
-            sx={{ 
-              p: { xs: 3, sm: 5 }, 
-              width: "100%", 
-              maxWidth: 800,
-              borderRadius: 3,
-              backgroundColor: theme.palette.mode === 'dark' 
-                ? 'rgba(255, 255, 255, 0.05)'
-                : 'rgba(255, 255, 255, 0.95)',
-              backdropFilter: 'blur(20px)',
-              border: `1px solid ${theme.palette.divider}`,
-            }}
-          >
-            {apiError && (
-              <Alert severity="error" sx={{ mb: 3 }} onClose={() => setApiError("")}>
-                {apiError}
-              </Alert>
-            )}
+            <TextField
+              select
+              inputRef={getFieldRef("business_type")}
+              name="business_type"
+              label="Business Type"
+              value={form.business_type}
+              onChange={handleChange}
+              error={!!errors.business_type}
+              helperText={errors.business_type || "This affects how we calculate your taxes"}
+              disabled={loading}
+              fullWidth
+              required
+              sx={{ mb: 3 }}
+            >
+              <MenuItem value="" disabled>
+                Select your business type
+              </MenuItem>
+              {BUSINESS_TYPES.map((type) => (
+                <MenuItem key={type.value} value={type.value}>
+                  {type.label}
+                </MenuItem>
+              ))}
+            </TextField>
 
-            <form onSubmit={handleSubmit} noValidate>
-              {/* Avatar Upload */}
-              <Fade in timeout={500}>
-                <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", mb: 5 }}>
-                  <Avatar 
-                    src={avatarPreview} 
-                    sx={{ 
-                      width: 120, 
-                      height: 120, 
-                      mb: 3,
-                      border: `4px solid ${theme.palette.primary.main}`,
-                      boxShadow: `0 0 20px ${theme.palette.primary.main}40`,
-                    }}
-                  >
-                    {!avatarPreview && <Person sx={{ fontSize: 60 }} />}
-                  </Avatar>
-                  
-                  <Button 
-                    component="label" 
-                    variant={avatarPreview ? "outlined" : "contained"}
-                    startIcon={<CloudUpload />}
-                    sx={{ mb: 1 }}
-                  >
-                    {avatarPreview ? "Change Photo" : "Upload Profile Picture"}
-                    <input 
-                      type="file" 
-                      accept="image/jpeg, image/jpg, image/png" 
-                      onChange={handleAvatarChange} 
-                      hidden 
+            <TextField
+              select
+              inputRef={getFieldRef("agency_type")}
+              name="agency_type"
+              label="Agency Type"
+              value={form.agency_type}
+              onChange={handleChange}
+              error={!!errors.agency_type}
+              helperText={errors.agency_type}
+              disabled={loading}
+              fullWidth
+              required
+              sx={{ mb: 3 }}
+            >
+              <MenuItem value="" disabled>
+                What type of agency do you run?
+              </MenuItem>
+              {AGENCY_TYPES.map((type) => (
+                <MenuItem key={type.value} value={type.value}>
+                  {type.label}
+                </MenuItem>
+              ))}
+            </TextField>
+
+            <TextField
+              inputRef={getFieldRef("date_of_birth")}
+              name="date_of_birth"
+              type="date"
+              label="Date of Birth"
+              value={form.date_of_birth}
+              onChange={handleChange}
+              InputLabelProps={{ shrink: true }}
+              error={!!errors.date_of_birth}
+              helperText={errors.date_of_birth}
+              disabled={loading}
+              fullWidth
+              required
+              sx={{ mb: 4 }}
+              inputProps={{
+                max: new Date().toISOString().split("T")[0],
+              }}
+            />
+
+            {/* Legal & Privacy Disclaimers */}
+            <Box sx={{ mb: 4, mt: 3 }}>
+              <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
+                <LegalIcon color="primary" sx={{ mr: 1 }} />
+                <Typography variant="h6" fontWeight={600}>
+                  Legal & Privacy
+                </Typography>
+              </Box>
+              <FormGroup>
+                {LEGAL_DISCLAIMERS.map(({ name, label }) => (
+                  <FormControlLabel
+                  control={
+                    <Checkbox
+                      name={name}
+                      checked={disclaimers[name]}
+                      onChange={handleChange}
+                      color="primary"
+                      required={false} // prevents automatic asterisk
+                      inputRef={getFieldRef(name)}
                     />
-                  </Button>
-                  
-                  <Typography variant="caption" color="text.secondary">
-                    JPEG or PNG only, max 5MB
-                  </Typography>
-                </Box>
-              </Fade>
-
-              {/* Name Fields */}
-              <Fade in timeout={700}>
-                <Box sx={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 3, mb: 3 }}>
-                  <TextField
-                    name="first_name" 
-                    label="First Name" 
-                    value={form.first_name} 
-                    onChange={handleChange}
-                    error={!!errors.first_name} 
-                    helperText={errors.first_name} 
-                    disabled={loading} 
-                    fullWidth
-                    InputProps={{
-                      startAdornment: <Person sx={{ mr: 1, color: theme.palette.text.secondary }} />,
-                    }}
-                  />
-                  <TextField
-                    name="last_name" 
-                    label="Last Name" 
-                    value={form.last_name} 
-                    onChange={handleChange}
-                    error={!!errors.last_name} 
-                    helperText={errors.last_name} 
-                    disabled={loading} 
-                    fullWidth
-                  />
-                </Box>
-              </Fade>
-
-              {/* Date of Birth */}
-              <Fade in timeout={900}>
-                <TextField
-                  name="date_of_birth" 
-                  type="date" 
-                  label="Date of Birth" 
-                  value={form.date_of_birth} 
-                  onChange={handleChange}
-                  InputLabelProps={{ shrink: true }} 
-                  error={!!errors.date_of_birth} 
-                  helperText={errors.date_of_birth}
-                  disabled={loading} 
-                  fullWidth
-                  InputProps={{
-                    startAdornment: <CalendarMonth sx={{ mr: 1, color: theme.palette.text.secondary }} />,
-                  }}
+                  }
+                  label={<Typography variant="body2" fontWeight={500}>{label}</Typography>}
                 />
-              </Fade>
+                
+                ))}
+                {Object.entries(errors)
+                  .filter(([key]) => key.startsWith("disclaimer") && errors[key])
+                  .map(([key]) => (
+                    <FormHelperText key={key} error sx={{ ml: 4 }}>
+                      {errors[key]}
+                    </FormHelperText>
+                  ))}
+              </FormGroup>
+            </Box>
 
-              {/* Submit Button */}
-              <Fade in timeout={1100}>
-                <Button
-                  type="submit" 
-                  variant="contained" 
-                  fullWidth 
-                  disabled={loading || progress() < 75} // Only require 75% since avatar is optional
-                  sx={{ 
-                    mt: 5, 
-                    py: 1.5,
-                    fontSize: '1.1rem',
-                    background: loading ? theme.palette.grey[400] : `linear-gradient(45deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
-                    '&:hover': {
-                      background: `linear-gradient(45deg, ${theme.palette.primary.dark}, ${theme.palette.secondary.dark})`,
-                    }
-                  }}
-                >
-                  {loading ? "Creating Your Profile..." : "Complete Setup"}
-                </Button>
-              </Fade>
+            <Button
+              type="submit"
+              variant="contained"
+              fullWidth
+              disabled={loading}
+              size="large"
+              endIcon={
+                loading ? <CircularProgress size={20} color="inherit" /> : <ArrowIcon />
+              }
+              sx={{ py: 1.5, mb: 3 }}
+            >
+              {loading ? "Saving..." : "Get My Tax Overview"}
+            </Button>
 
-              {/* Progress Indicator */}
-              {progress() < 75 && (
-                <Fade in timeout={1300}>
-                  <Typography 
-                    variant="caption" 
-                    color="text.secondary" 
-                    sx={{ mt: 2, display: 'block', textAlign: 'center' }}
-                  >
-                    Complete all required fields to continue
-                  </Typography>
-                </Fade>
-              )}
-            </form>
-          </Paper>
-        </Fade>
-      </Box>
+            <Box sx={{ textAlign: "center" }}>
+              <Button
+                variant="text"
+                color="inherit"
+                onClick={() => {
+                  clearUser();
+                  navigate("/login");
+                }}
+                size="small"
+                sx={{ color: theme.palette.text.secondary }}
+              >
+                Not you? Sign out
+              </Button>
+            </Box>
+          </form>
+        </Paper>
+        <Box sx={{ mt: 3, textAlign: "center" }}>
+          <Typography variant="caption" color="text.secondary">
+            Next: Securely connect your bank to unlock your dashboard.
+          </Typography>
+        </Box>
+      </Container>
     </Box>
   );
 };

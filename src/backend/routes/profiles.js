@@ -1,7 +1,7 @@
 import express from 'express';
 import { query } from '../db.js';
 import authenticate from '../middlewares/authenticate.js';
-import {logAudit} from '../utils/auditLogger.js'; // ✅ Correct default import
+import {logAudit} from '../utils/auditLogger.js';
 import { uploadAvatar } from '../middlewares/multer.js';
 import { uploadToCloudinary } from '../utils/cloudinary.js';
 
@@ -10,16 +10,31 @@ const router = express.Router();
 // CREATE a new profile for the authenticated user
 router.post('/', authenticate, async (req, res) => {
   const { user_id } = req.user;
-  const { first_name, last_name, date_of_birth } = req.body;
+  const { 
+    first_name, 
+    last_name, 
+    date_of_birth,
+    business_type,
+    agency_type,
+    tax_year_start 
+  } = req.body;
 
   if (!first_name || !last_name || !date_of_birth) {
-    return res.status(400).json({ message: "All fields are required." });
+    return res.status(400).json({ message: "First name, last name and date of birth are required." });
   }
 
   const queryText = `
-    INSERT INTO profiles (user_id, first_name, last_name, date_of_birth)
-    VALUES ($1, $2, $3, $4) RETURNING *`;
-  const values = [user_id, first_name, last_name, date_of_birth];
+    INSERT INTO profiles (user_id, first_name, last_name, date_of_birth, business_type, agency_type, tax_year_start)
+    VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`;
+  const values = [
+    user_id, 
+    first_name, 
+    last_name, 
+    date_of_birth,
+    business_type || null,
+    agency_type || null,
+    tax_year_start || '2024-01-01'
+  ];
 
   try {
     const result = await query(queryText, values);
@@ -29,7 +44,14 @@ router.post('/', authenticate, async (req, res) => {
       action: 'create_profile',
       tableName: 'profiles',
       recordId: result.rows[0].profile_id,
-      metadata: { first_name, last_name, date_of_birth }
+      metadata: { 
+        first_name, 
+        last_name, 
+        date_of_birth,
+        business_type,
+        agency_type,
+        tax_year_start 
+      }
     });
     res.status(201).json({ message: "Profile created successfully", profile: result.rows[0] });
   } catch (error) {
@@ -38,6 +60,7 @@ router.post('/', authenticate, async (req, res) => {
   }
 });
 
+// Upload avatar for the authenticated user
 router.post('/avatar', authenticate, uploadAvatar, async (req, res) => {
   const { user_id } = req.user;
 
@@ -87,8 +110,6 @@ router.post('/avatar', authenticate, uploadAvatar, async (req, res) => {
   }
 });
 
-
-// READ the authenticated user's profile
 // READ the authenticated user's profile
 router.get('/', authenticate, async (req, res) => {
   const { user_id } = req.user;
@@ -107,21 +128,41 @@ router.get('/', authenticate, async (req, res) => {
   }
 });
 
-
 // UPDATE the authenticated user's profile
 router.put('/', authenticate, async (req, res) => {
   const { user_id } = req.user;
-  const { first_name, last_name, date_of_birth } = req.body;
+  const { 
+    first_name, 
+    last_name, 
+    date_of_birth,
+    business_type,
+    agency_type,
+    tax_year_start 
+  } = req.body;
 
   if (!first_name || !last_name || !date_of_birth) {
-    return res.status(400).json({ message: "All fields are required." });
+    return res.status(400).json({ message: "First name, last name and date of birth are required." });
   }
 
   const queryText = `
     UPDATE profiles
-    SET first_name = $1, last_name = $2, date_of_birth = $3, updated_at = CURRENT_TIMESTAMP
-    WHERE user_id = $4 RETURNING *`;
-  const values = [first_name, last_name, date_of_birth, user_id];
+    SET first_name = $1, 
+        last_name = $2, 
+        date_of_birth = $3,
+        business_type = $4,
+        agency_type = $5,
+        tax_year_start = $6,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE user_id = $7 RETURNING *`;
+  const values = [
+    first_name, 
+    last_name, 
+    date_of_birth,
+    business_type,
+    agency_type,
+    tax_year_start,
+    user_id
+  ];
 
   try {
     const result = await query(queryText, values);
@@ -134,7 +175,14 @@ router.put('/', authenticate, async (req, res) => {
       action: 'update_profile',
       tableName: 'profiles',
       recordId: result.rows[0].profile_id,
-      metadata: { first_name, last_name, date_of_birth }
+      metadata: { 
+        first_name, 
+        last_name, 
+        date_of_birth,
+        business_type,
+        agency_type,
+        tax_year_start 
+      }
     });
     res.status(200).json({ message: 'Profile updated', profile: result.rows[0] });
   } catch (error) {

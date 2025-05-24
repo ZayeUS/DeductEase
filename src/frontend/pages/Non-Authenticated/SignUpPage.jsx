@@ -21,7 +21,6 @@ import { postData } from "../../utils/BackendRequestHelper";
 import { useUserStore } from "../../store/userStore";
 
 export function SignUpPage() {
-  // State
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -214,7 +213,7 @@ export function SignUpPage() {
               Create Account
             </Typography>
             <Typography variant="body1" color="text.secondary">
-              Join Cofoundless and start your journey
+              Join DuductEase and take control of your taxes. We’ll help you find deductions you’re missing.
             </Typography>
           </Box>
 

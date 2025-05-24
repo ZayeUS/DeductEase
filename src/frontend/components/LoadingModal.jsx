@@ -3,7 +3,8 @@ import {
   Dialog,
   DialogContent,
   CircularProgress,
-  Typography
+  Typography,
+  Box
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { useUserStore } from '../store/userStore';
@@ -18,76 +19,100 @@ export const LoadingModal = ({ message = "Loading..." }) => {
       PaperProps={{
         sx: {
           backgroundColor: theme.palette.background.paper,
-          borderRadius: 3,
-          boxShadow: '0 12px 40px rgba(0, 0, 0, 0.3)',
+          borderRadius: 2,
+          boxShadow: theme.shadows[8],
           overflow: 'hidden',
-          p: 4,
-          minWidth: 280,
-          minHeight: 280,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
+          minWidth: 320,
+          border: `1px solid ${theme.palette.divider}`,
         },
       }}
       disableEscapeKeyDown
       BackdropProps={{
         sx: {
-          backgroundColor: 'rgba(0, 0, 0, 0.6)',
-          backdropFilter: 'blur(8px)',
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
         },
       }}
     >
       <DialogContent
         sx={{
+          p: 4,
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          textAlign: 'center',
-          gap: 3,
-          animation: 'fadeIn 1s ease-out both',
+          gap: 2.5,
         }}
       >
-        <CircularProgress
-          thickness={5}
-          size={80}
-          sx={{
-            color: theme.palette.primary.main,
-            animation: 'spinnerFade 1.2s ease-out both',
-          }}
-        />
+        {/* Progress indicator */}
+        <Box sx={{ position: 'relative' }}>
+          <CircularProgress
+            size={48}
+            thickness={2.5}
+            sx={{
+              color: theme.palette.primary.main,
+            }}
+          />
+          {/* Optional: Background circle for contrast */}
+          <CircularProgress
+            variant="determinate"
+            value={100}
+            size={48}
+            thickness={2.5}
+            sx={{
+              color: theme.palette.action.disabledBackground,
+              position: 'absolute',
+              left: 0,
+              zIndex: -1,
+            }}
+          />
+        </Box>
 
+        {/* Message */}
         <Typography
-          variant="h6"
+          variant="body1"
           sx={{
-            textTransform: 'uppercase',
-            letterSpacing: 2,
-            fontWeight: 500,
-            fontSize: '1rem',
             color: theme.palette.text.primary,
-            opacity: 0,
-            animation: 'slideFadeIn 1s ease-out 0.3s forwards',
+            fontWeight: 500,
+            textAlign: 'center',
           }}
         >
           {message}
         </Typography>
+
+        {/* Security indicator (optional - adds trust) */}
+        <Box sx={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: 0.5,
+          mt: 1 
+        }}>
+          <Box
+            sx={{
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              backgroundColor: theme.palette.success.main,
+              animation: 'pulse 2s infinite',
+            }}
+          />
+          <Typography
+            variant="caption"
+            sx={{
+              color: theme.palette.text.secondary,
+              fontSize: '0.75rem',
+            }}
+          >
+            Secure connection
+          </Typography>
+        </Box>
       </DialogContent>
 
       <style>
         {`
-          @keyframes fadeIn {
-            from { opacity: 0; transform: scale(0.95); }
-            to { opacity: 1; transform: scale(1); }
-          }
-
-          @keyframes spinnerFade {
-            from { opacity: 0; transform: scale(0.9); }
-            to { opacity: 1; transform: scale(1); }
-          }
-
-          @keyframes slideFadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
+          @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.6; }
+            100% { opacity: 1; }
           }
         `}
       </style>

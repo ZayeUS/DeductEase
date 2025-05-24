@@ -2,37 +2,45 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import usersRouter from './routes/users.js';
-import rolesRouter from './routes/roles.js'; // Import the roles router
-import profileRouter from './routes/profiles.js'; // Import the profile routes
+import rolesRouter from './routes/roles.js';
+import profileRouter from './routes/profiles.js';
 import auditRouter from './routes/auditRoutes.js';
 import testEmailRoutes from './routes/testEmail.js';
-import stripeRouter from './routes/stripeRoutes.js'; // Import the Stripe routes
+import stripeRouter from './routes/stripeRoutes.js';
+import plaidRoutes from './routes/plaid/plaidRoutes.js';
+import taxRoutes from './routes/taxRoutes.js';
+import categoryRoutes from './routes/plaid/autoCategory.js';
+import dashboardRoutes from './routes/dashboard/dashboard.js'; // ✅ NEW import
+import reportsRouter from './routes/reports/reports.js'; // ✅ NEW import
 
 dotenv.config();
 
 const app = express();
 
-// CORS configuration
 const corsOptions = {
-  origin: process.env.CORS_ORIGIN || "*", // Restrict based on environment
+  origin: process.env.CORS_ORIGIN || "*",
   methods: "GET,POST,PUT,DELETE",
   allowedHeaders: "Content-Type,Authorization",
 };
 
 app.use(cors(corsOptions));
-app.use(express.json()); // Middleware to parse incoming JSON data
+app.use(express.json());
 
-// Routes
-app.use("/api/users", usersRouter);  // Users routes
-app.use("/api/roles", rolesRouter);  // Roles routes
-app.use("/api/profile", profileRouter);  // Profile routes
-app.use("/api/audit", auditRouter); // Audit log routes
-app.use('/api/email', testEmailRoutes); // Email routes
-app.use("/api/stripe", stripeRouter);  // Stripe routes (subscription, payment handling)
+// Mount all routes
+app.use("/api/users", usersRouter);
+app.use("/api/roles", rolesRouter);
+app.use("/api/profile", profileRouter);
+app.use("/api/audit", auditRouter);
+app.use("/api/email", testEmailRoutes);
+app.use("/api/stripe", stripeRouter);
+app.use("/api/plaid", plaidRoutes);
+app.use("/api/tax", taxRoutes);
+app.use("/api/category", categoryRoutes);
+app.use("/api/dashboard", dashboardRoutes); // ✅ NEW route
+app.use("/api/reports", reportsRouter); // ✅ NEW route
 
-// Server
+
 const PORT = process.env.PORT || 5000;
-
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });

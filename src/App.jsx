@@ -1,4 +1,4 @@
-// App.jsx - Optimized Application Shell with Enhanced Theme Persistence
+// App.jsx
 import React, { useEffect, useMemo, useCallback } from "react";
 import { CssBaseline, Box, useMediaQuery, ThemeProvider } from "@mui/material";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
@@ -17,12 +17,17 @@ import { ProfileOnboarding } from "./frontend/pages/Authenticated/ProfileOnboard
 import { UserProfilePage } from "./frontend/pages/Authenticated/UserProfilePage";
 import { StripeDashboard } from "./frontend/pages/Authenticated/StripeDashboard";
 import { PaymentSuccessPage } from "./frontend/pages/Authenticated/PaymentSuccessPage";
+import { Connect } from "./frontend/pages/Authenticated/Connect";
+import { TransactionReview } from "./frontend/pages/Authenticated/TransactionReview";
+import { Transactions } from "./frontend/pages/Authenticated/Transactions";
+import { Reports } from "./frontend/pages/Authenticated/Reports";
+
 import { ProtectedRoute } from "./frontend/components/ProtectedRoute";
 
 const DRAWER_WIDTH = 60;
 
 export const App = () => {
-  const { isLoggedIn, profile, roleId, listenAuthState, authHydrated, loading } = useUserStore();
+  const { isLoggedIn, profile, roleId, listenAuthState, authHydrated, loading, plaidConnected } = useUserStore();
   
   // Initialize theme from localStorage or system preference
   const [isDarkMode, setIsDarkMode] = React.useState(() => {
@@ -93,8 +98,11 @@ export const App = () => {
   }, [listenAuthState]);
 
   // Layout conditions
-  const showSidebar = isLoggedIn && !isMobile && location.pathname !== "/profile-onboarding";
-  const showMobileNav = isLoggedIn && isMobile && location.pathname !== "/profile-onboarding";
+  const hiddenRoutes = ["/profile-onboarding", "/connect", "/review"];
+  const shouldHideUI = hiddenRoutes.includes(location.pathname);
+  
+  const showSidebar = isLoggedIn && !isMobile && !shouldHideUI;
+  const showMobileNav = isLoggedIn && isMobile && !shouldHideUI;
 
   // Redirect logic
   const getRedirect = () => {
@@ -171,6 +179,37 @@ export const App = () => {
                   : <Navigate to={getRedirect()} />
               }
             />
+
+            {/* Connect Bank Route */}
+            <Route
+              path="/connect"
+              element={
+                <ProtectedRoute allowedRoles={[1, 2]}>
+                 <Connect />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Review Route */}
+            <Route path="/review" element={
+              <ProtectedRoute allowedRoles={[1, 2]}>
+                <TransactionReview />
+              </ProtectedRoute>
+            } />
+
+            {/* Transactions Route */}
+            <Route path="/transactions" element={
+              <ProtectedRoute allowedRoles={[1, 2]}>
+                <Transactions />
+              </ProtectedRoute>
+            } />
+
+            {/* Reports Route */}
+            <Route path="/reports" element={
+              <ProtectedRoute allowedRoles={[1, 2]}>
+                <Reports />
+              </ProtectedRoute>
+            } />
 
             {/* Protected routes with role-based access */}
             <Route path="/user-profile" element={

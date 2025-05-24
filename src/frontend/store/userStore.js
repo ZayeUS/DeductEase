@@ -29,20 +29,21 @@ export const useUserStore = create((set, get) => ({
   loading: false,
   authLoading: false,
   authHydrated: false,
+  plaidConnected: false, // 🔥 New flag
 
   // Actions
   setLoading: (loading) => set({ loading }),
   setProfile: (profile) => set({ profile }),
 
+  // NEW: Update Plaid connection status
+  setPlaidConnected: (isConnected) => set({ plaidConnected: isConnected }),
+
   setUser: (firebaseId, roleId, userId) => {
     const normalizedRoleId = Number(roleId);
-    
-    // Update storage
     storage.set('firebaseId', firebaseId);
     storage.set('roleId', String(normalizedRoleId));
     storage.set('userId', userId);
 
-    // Update state
     set({
       firebaseId,
       roleId: normalizedRoleId,
@@ -52,42 +53,40 @@ export const useUserStore = create((set, get) => ({
   },
 
   clearUser: () => {
-    // Clear storage
     storage.remove('firebaseId');
     storage.remove('roleId');
     storage.remove('userId');
 
-    // Reset state
     set({
       firebaseId: null,
       roleId: null,
       userId: null,
       isLoggedIn: false,
       profile: null,
+      plaidConnected: false, // reset on logout
     });
   },
 
-  // Firebase Auth Listener
   listenAuthState: () => {
     set({ authHydrated: false, authLoading: true, isLoggedIn: false });
 
     return auth.onAuthStateChanged(async (user) => {
       try {
         if (user) {
-          // Parallel requests for user and profile data
           const [userData, profileData] = await Promise.all([
             getData(`/users/${user.uid}`),
             getData(`/profile`).catch(() => null),
           ]);
 
-          // Validate user data
           if (!userData?.user_id || userData?.role_id === undefined) {
-            console.warn("Invalid user data, clearing session.");
             get().clearUser();
           } else {
-            // Set user data
             get().setUser(user.uid, userData.role_id, userData.user_id);
             set({ profile: profileData || null });
+
+            // NEW: check if Plaid is connected
+            const banks = await getData("/plaid/banks").catch(() => []);
+            set({ plaidConnected: Array.isArray(banks) && banks.length > 0 });
           }
         } else {
           get().clearUser();
@@ -99,5 +98,5 @@ export const useUserStore = create((set, get) => ({
         set({ authLoading: false, authHydrated: true });
       }
     });
-  }
+  },
 }));

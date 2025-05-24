@@ -1,338 +1,391 @@
-import React, { useEffect, useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
-  Typography,
   Container,
-  Table,
-  TableHead,
-  TableRow,
-  TableCell,
-  TableBody,
-  Paper,
-  CircularProgress,
   Box,
-  Chip,
-  Tooltip,
-  IconButton,
+  Alert,
+  Grid,
+  Typography,
   useTheme,
   useMediaQuery,
-  Fade,
+  Skeleton,
+  Card,
+  CardContent,
   Button
 } from "@mui/material";
-import { 
-  Info as InfoIcon,
-  Refresh as RefreshIcon,
-  Download as DownloadIcon 
-} from "@mui/icons-material";
 import { useUserStore } from "../../store/userStore";
-import { LoadingModal } from "../../components/LoadingModal";
-import { getData } from "../../utils/BackendRequestHelper";
+import { getData, postData, putData } from "../../utils/BackendRequestHelper";
+import { usePlaidLink } from "react-plaid-link";
 
-// Helpers
-const formatTimestamp = (isoTimestamp) => {
-  if (!isoTimestamp) return "—";
-  try {
-    const date = new Date(isoTimestamp);
-    if (isNaN(date.getTime())) return "Invalid date";
-    return new Intl.DateTimeFormat(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      timeZoneName: "short",
-    }).format(date);
-  } catch {
-    return "Format error";
-  }
-};
+import { AccountConnections } from "../../components/dashboard/Connections/AccountConnections";
+import { DashboardStats } from "../../components/dashboard/DashboardStats";
+import { RecentActivity } from "../../components/dashboard/Transactions/RecentActivity";
+import { CashFlowChart } from "../../components/dashboard/Transactions/CashFlowChart";
 
-const formatMetadata = (metadata) => {
-  if (!metadata) return "—";
-  try {
-    const data = typeof metadata === "string" ? JSON.parse(metadata) : metadata;
-    if (!data || Object.keys(data).length === 0) return "No data";
-    return Object.entries(data)
-      .map(([key, value]) => {
-        const displayValue =
-          typeof value === "object"
-            ? "[Object]"
-            : typeof value === "string" && value.length > 15
-            ? value.substring(0, 12) + "..."
-            : String(value);
-        return `${key}: ${displayValue}`;
-      })
-      .join(", ");
-  } catch {
-    return "Invalid format";
-  }
-};
-
-const getActionColor = (action) => {
-  if (!action) return "default";
-  const map = {
-    create: "success",
-    update: "info",
-    delete: "error",
-    login: "primary",
-    logout: "default",
-  };
-  const key = Object.keys(map).find((k) => action.toLowerCase().includes(k));
-  return key ? map[key] : "secondary";
-};
-
-const formatUuid = (uuid) => (uuid ? uuid.substring(0, 8) + "..." : "—");
+const LoadingSkeleton = ({ height = 200 }) => (
+  <Box sx={{ p: 2 }}>
+    <Skeleton variant="text" width="40%" height={30} sx={{ mb: 1 }} />
+    <Skeleton variant="rectangular" height={height} />
+  </Box>
+);
 
 export const AdminDashboard = () => {
-  const { userId, isLoggedIn, loading } = useUserStore();
+  const { isLoggedIn, profile } = useUserStore();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
-  const [auditLogs, setAuditLogs] = useState([]);
-  const [loadingAudit, setLoadingAudit] = useState(true);
-  const [error, setError] = useState(null);
+  const [banks, setBanks] = useState([]);
+  const [transactions, setTransactions] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [summaryData, setSummaryData] = useState(null);
 
-  const fetchLogs = async () => {
-    if (!isLoggedIn) return;
+  const [loading, setLoading] = useState({
+    banks: false,
+    transactions: false,
+    categories: false,
+    summary: false,
+    sync: false,
+    linkToken: false,
+  });
+
+  const [error, setError] = useState(null);
+  const [syncMessage, setSyncMessage] = useState(null);
+  const [plaidLinkToken, setPlaidLinkToken] = useState(null);
+
+  const fetchData = useCallback(async (endpoint, setter, key) => {
+    setLoading((prev) => ({ ...prev, [key]: true }));
     try {
-      setLoadingAudit(true);
+      const data = await getData(endpoint);
+      setter(data);
       setError(null);
-      const data = await getData("/audit");
-      setAuditLogs(data);
-    } catch {
-      setError("Unable to load audit logs. Please try again later.");
+    } catch (err) {
+      setError(`Failed to load ${key}`);
+      console.error(`Error loading ${key}:`, err);
     } finally {
-      setLoadingAudit(false);
+      setLoading((prev) => ({ ...prev, [key]: false }));
     }
-  };
+  }, []);
+
+  const loadAllData = useCallback(() => {
+    fetchData("/plaid/banks", setBanks, "banks");
+    fetchData("/tax/transactions", setTransactions, "transactions");
+    fetchData("/tax/categories", setCategories, "categories");
+  }, [fetchData]);
+
+  const fetchSummary = useCallback(async () => {
+    setLoading((prev) => ({ ...prev, summary: true }));
+    try {
+      const data = await getData("/dashboard/stats");
+      setSummaryData(data);
+      setError(null);
+    } catch (err) {
+      setError("Failed to load dashboard summary");
+      console.error("Error loading dashboard summary:", err);
+    } finally {
+      setLoading((prev) => ({ ...prev, summary: false }));
+    }
+  }, []);
 
   useEffect(() => {
-    fetchLogs();
-  }, [isLoggedIn]);
+    if (isLoggedIn) {
+      loadAllData();
+      fetchSummary();
+    }
+  }, [isLoggedIn, loadAllData, fetchSummary]);
 
-  if (loading) return <LoadingModal message="Loading admin panel..." />;
+  const updateTransactionCategory = useCallback(
+    async (transactionId, categoryId) => {
+      const prevTransactions = [...transactions];
+      setTransactions((trs) =>
+        trs.map((t) =>
+          t.transaction_id === transactionId
+            ? {
+                ...t,
+                category_id: categoryId,
+                category_name: categories.find(
+                  (c) => c.category_id === categoryId
+                )?.name,
+              }
+            : t
+        )
+      );
+      try {
+        await putData(`/tax/transactions/${transactionId}/category`, {
+          categoryId,
+        });
+      } catch (err) {
+        console.error("Failed to update category:", err);
+        setError("Failed to update category");
+        setTransactions(prevTransactions);
+      }
+    },
+    [transactions, categories]
+  );
 
-  if (!isLoggedIn) {
+  const syncTransactions = useCallback(
+    async (isInitial = false) => {
+      setLoading((prev) => ({ ...prev, sync: true }));
+      setSyncMessage(
+        isInitial ? "Performing initial sync..." : "Syncing transactions..."
+      );
+      try {
+        const endpoint = isInitial ? "/plaid/sync/initial" : "/plaid/sync";
+        const result = await postData(endpoint, {});
+        setSyncMessage(`Successfully imported ${result.imported} transactions`);
+        loadAllData();
+        fetchSummary();
+        setTimeout(() => setSyncMessage(null), 3000);
+      } catch (err) {
+        console.error("Sync failed:", err);
+        setError("Failed to sync transactions");
+        setSyncMessage(null);
+      } finally {
+        setLoading((prev) => ({ ...prev, sync: false }));
+      }
+    },
+    [loadAllData, fetchSummary]
+  );
+
+  // Fetch Plaid Link token
+  const fetchLinkToken = useCallback(async () => {
+    setLoading((prev) => ({ ...prev, linkToken: true }));
+    try {
+      const response = await postData("/plaid/link-token", {});
+      setPlaidLinkToken(response.link_token);
+      setError(null);
+    } catch (err) {
+      setError("Failed to get Plaid link token");
+      console.error("Plaid link token error:", err);
+    } finally {
+      setLoading((prev) => ({ ...prev, linkToken: false }));
+    }
+  }, []);
+
+  const { open, ready } = usePlaidLink({
+    token: plaidLinkToken,
+    onSuccess: async (public_token) => {
+      setError(null);
+      try {
+        await postData("/plaid/exchange-token", { public_token });
+        await fetchData("/plaid/banks", setBanks, "banks");
+        await syncTransactions(true);
+        setPlaidLinkToken(null);
+      } catch (err) {
+        console.error("Plaid linking error:", err);
+        setError("Failed to link bank account");
+      }
+    },
+  });
+
+  useEffect(() => {
+    if (plaidLinkToken && ready) {
+      open();
+    }
+  }, [plaidLinkToken, ready, open]);
+
+  if (
+    loading.banks ||
+    loading.transactions ||
+    loading.categories ||
+    loading.summary
+  ) {
     return (
-      <Container maxWidth="sm" sx={{ py: 8, textAlign: "center" }}>
-        <Typography variant="h4" color="error" gutterBottom>
-          Access Restricted
-        </Typography>
-        <Typography variant="body1">
-          You must be logged in as an administrator to view this page.
-        </Typography>
+      <Container maxWidth="xl" sx={{ py: 4 }}>
+        <LoadingSkeleton height={100} />
+        <Grid container spacing={3} sx={{ mt: 2 }}>
+          <Grid item xs={12} md={8}>
+            <LoadingSkeleton />
+          </Grid>
+          <Grid item xs={12} md={4}>
+            <LoadingSkeleton />
+          </Grid>
+        </Grid>
+        <LoadingSkeleton height={400} />
       </Container>
     );
   }
 
+  const unreviewedTransactionsCount = transactions.filter(
+    (t) => !t.is_reviewed
+  ).length;
+
   return (
-    <Box
-      sx={{
-        minHeight: "100vh",
-        bgcolor: theme.palette.background.default,
-        position: "relative",
-        overflow: "hidden",
-        "&::before": {
-          content: '""',
-          position: "absolute",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: theme.palette.mode === 'dark'
-            ? `radial-gradient(circle at 20% 80%, ${theme.palette.primary.dark}20 0%, transparent 50%),
-               radial-gradient(circle at 80% 20%, ${theme.palette.secondary.dark}15 0%, transparent 50%)`
-            : `radial-gradient(circle at 20% 80%, ${theme.palette.primary.light}20 0%, transparent 50%),
-               radial-gradient(circle at 80% 20%, ${theme.palette.secondary.light}15 0%, transparent 50%)`,
-          animation: "drift 20s ease-in-out infinite",
-          zIndex: 0,
-        },
-        "@keyframes drift": {
-          "0%, 100%": { transform: "translate(0, 0)" },
-          "50%": { transform: "translate(-20px, -20px)" },
-        }
-      }}
-    >
-      <Container maxWidth="lg" sx={{ pt: 4, pb: 6, position: "relative", zIndex: 1 }}>
-        <Fade in timeout={500}>
-          <Box>
-            <Typography 
-              variant="h4" 
-              fontWeight="bold"
-              sx={{
-                mb: 1,
-                background: `linear-gradient(45deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
-                backgroundClip: "text",
-                textFillColor: "transparent",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-              }}
-            >
-              Admin Dashboard
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 5 }}>
-              System Activity Logs
-            </Typography>
-          </Box>
-        </Fade>
+    <Container maxWidth="xl" sx={{ py: 4 }}>
+      {/* Header */}
+      <Box sx={{ mb: 4 }}>
+        <Typography 
+          variant="h4" 
+          sx={{ 
+            fontWeight: 800, 
+            mb: 1,
+            background: `linear-gradient(135deg, ${theme.palette.text.primary} 0%, ${theme.palette.primary.main} 100%)`,
+            backgroundClip: 'text',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            fontSize: isMobile ? '1.75rem' : '2.125rem'
+          }}
+        >
+          {`Welcome back${profile?.first_name ? ", " + profile.first_name : ""}!`}
+        </Typography>
+        <Typography 
+          variant="body1" 
+          sx={{ 
+            color: theme.palette.text.secondary,
+            fontSize: '1rem',
+            fontWeight: 500
+          }}
+        >
+          Here's your tax optimization overview.
+        </Typography>
+      </Box>
 
-      
+      {/* Alerts */}
+      {error && (
+        <Alert
+          severity="error"
+          sx={{ 
+            mb: 3, 
+            borderRadius: 3,
+            border: `1px solid ${theme.palette.error.light}`,
+            '& .MuiAlert-icon': {
+              color: theme.palette.error.main
+            }
+          }}
+          onClose={() => setError(null)}
+        >
+          {error}
+        </Alert>
+      )}
 
-        {loadingAudit ? (
-          <Box display="flex" justifyContent="center" py={4}>
-            <CircularProgress />
+      {syncMessage && (
+        <Alert 
+          severity="info" 
+          sx={{ 
+            mb: 3, 
+            borderRadius: 3,
+            border: `1px solid ${theme.palette.info.light}`,
+            '& .MuiAlert-icon': {
+              color: theme.palette.info.main
+            }
+          }}
+        >
+          {syncMessage}
+        </Alert>
+      )}
+
+      {/* Dashboard Content */}
+      <Box sx={{ mb: 4 }}>
+        {/* Row 1: AI Insights + Stats */}
+        {summaryData && (
+          <Box sx={{ mb: 4 }}>
+            <DashboardStats data={summaryData} transactions={transactions} />
           </Box>
-        ) : error ? (
-          <Fade in timeout={800}>
-            <Paper 
-              elevation={0} 
-              sx={{ 
-                p: 3, 
-                bgcolor: theme.palette.error.main + '20',
-                color: theme.palette.error.main,
-                borderRadius: 3, 
-                textAlign: "center",
-                border: `1px solid ${theme.palette.error.main}40`
-              }}
-            >
-              <Typography>{error}</Typography>
-            </Paper>
-          </Fade>
-        ) : auditLogs.length === 0 ? (
-          <Fade in timeout={800}>
-            <Paper 
-              elevation={0} 
-              sx={{ 
-                p: 3, 
-                bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)',
-                borderRadius: 3, 
-                textAlign: "center",
-                border: `1px solid ${theme.palette.divider}`
-              }}
-            >
-              <Typography color="text.secondary">No audit logs found</Typography>
-            </Paper>
-          </Fade>
-        ) : (
-          <Fade in timeout={800}>
-            <Paper 
-              elevation={0} 
-              sx={{ 
-                overflowX: "auto", 
-                borderRadius: 3,
-                bgcolor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.95)',
-                backdropFilter: 'blur(20px)',
-                border: `1px solid ${theme.palette.divider}`
-              }}
-            >
-              <Table size={isMobile ? "small" : "medium"}>
-                <TableHead>
-                  <TableRow>
-                    <TableCell sx={{ 
-                      bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)',
-                      borderBottom: `1px solid ${theme.palette.divider}`,
-                      fontWeight: 600 
-                    }}>
-                      User
-                    </TableCell>
-                    <TableCell sx={{ 
-                      bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)',
-                      borderBottom: `1px solid ${theme.palette.divider}`,
-                      fontWeight: 600 
-                    }}>
-                      Action
-                    </TableCell>
-                    {!isMobile && (
-                      <TableCell sx={{ 
-                        bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)',
-                        borderBottom: `1px solid ${theme.palette.divider}`,
-                        fontWeight: 600 
-                      }}>
-                        Table
-                      </TableCell>
-                    )}
-                    {!isMobile && (
-                      <TableCell sx={{ 
-                        bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)',
-                        borderBottom: `1px solid ${theme.palette.divider}`,
-                        fontWeight: 600 
-                      }}>
-                        Record ID
-                      </TableCell>
-                    )}
-                    <TableCell sx={{ 
-                      bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)',
-                      borderBottom: `1px solid ${theme.palette.divider}`,
-                      fontWeight: 600 
-                    }}>
-                      {isMobile ? "Meta" : "Metadata"}
-                    </TableCell>
-                    <TableCell sx={{ 
-                      bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)',
-                      borderBottom: `1px solid ${theme.palette.divider}`,
-                      fontWeight: 600 
-                    }}>
-                      Timestamp
-                    </TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {auditLogs.map((log) => (
-                    <TableRow
-                      key={log.log_id}
-                      hover
-                      sx={{ 
-                        "&:nth-of-type(odd)": { 
-                          bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)'
-                        },
-                        "&:hover": {
-                          bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)'
-                        }
-                      }}
-                    >
-                      <TableCell>{log.email || "System"}</TableCell>
-                      <TableCell>
-                        <Chip
-                          label={log.action}
-                          size="small"
-                          color={getActionColor(log.action)}
-                          sx={{ 
-                            fontWeight: 500,
-                            borderRadius: 2
-                          }}
-                        />
-                      </TableCell>
-                      {!isMobile && <TableCell>{log.table_name || "—"}</TableCell>}
-                      {!isMobile && (
-                        <TableCell>
-                          <Tooltip title={log.record_id || "None"}>
-                            <span>{formatUuid(log.record_id)}</span>
-                          </Tooltip>
-                        </TableCell>
-                      )}
-                      <TableCell>
-                        <Tooltip
-                          title={
-                            <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>
-                              {JSON.stringify(log.metadata, null, 2)}
-                            </pre>
-                          }
-                          arrow
-                        >
-                          <Box component="span" sx={{ cursor: "pointer" }}>
-                            {formatMetadata(log.metadata)}
-                          </Box>
-                        </Tooltip>
-                      </TableCell>
-                      <TableCell>{formatTimestamp(log.created_at)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </Paper>
-          </Fade>
         )}
-      </Container>
-    </Box>
+
+        {/* Row 2: Connected Accounts + Cash Flow Chart */}
+        <Grid container spacing={3} sx={{ mb: 4 }}>
+          <Grid item xs={12} lg={5}>
+            <AccountConnections
+              linkedAccounts={banks}
+              loading={loading.banks}
+              onSync={syncTransactions}
+              syncing={loading.sync}
+              formatDate={(dateString) =>
+                dateString
+                  ? new Date(dateString).toLocaleString()
+                  : "Never synced"
+              }
+            />
+          </Grid>
+          
+          <Grid item xs={12} lg={7}>
+            <CashFlowChart 
+              loading={loading.transactions}
+            />
+          </Grid>
+        </Grid>
+
+        {/* Row 3: Recent Activity + Quick Actions */}
+        <Grid container spacing={3}>
+          <Grid item xs={12} md={6}>
+            <RecentActivity 
+              transactions={transactions}
+              loading={loading.transactions}
+            />
+          </Grid>
+          
+          <Grid item xs={12} md={6}>
+            {/* Quick Actions Card */}
+            <Card sx={{ borderRadius: 3 }}>
+              <CardContent sx={{ p: 3 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 3 }}>
+                  <Box sx={{ 
+                    width: 20, 
+                    height: 20, 
+                    borderRadius: '50%', 
+                    bgcolor: theme.palette.primary.main,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    <Typography sx={{ color: 'white', fontSize: '0.7rem', fontWeight: 700 }}>
+                      !
+                    </Typography>
+                  </Box>
+                  <Typography
+                    variant="h6"
+                    sx={{
+                      fontWeight: 700,
+                      color: theme.palette.text.primary,
+                      fontSize: '1rem'
+                    }}
+                  >
+                    Quick Actions
+                  </Typography>
+                </Box>
+                
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <Button 
+                    variant="outlined" 
+                    fullWidth
+                    sx={{ 
+                      borderRadius: 2, 
+                      textTransform: 'none',
+                      fontWeight: 600,
+                      justifyContent: 'flex-start'
+                    }}
+                  >
+                    Export for Accountant
+                  </Button>
+                  <Button 
+                    variant="outlined" 
+                    fullWidth
+                    sx={{ 
+                      borderRadius: 2, 
+                      textTransform: 'none',
+                      fontWeight: 600,
+                      justifyContent: 'flex-start'
+                    }}
+                  >
+                    View Tax Report
+                  </Button>
+                  <Button 
+                    variant="outlined" 
+                    fullWidth
+                    sx={{ 
+                      borderRadius: 2, 
+                      textTransform: 'none',
+                      fontWeight: 600,
+                      justifyContent: 'flex-start'
+                    }}
+                  >
+                    Calculate Quarterly Payment
+                  </Button>
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+        </Grid>
+      </Box>
+    </Container>
   );
 };
